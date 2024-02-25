@@ -5,26 +5,43 @@
 #include <signal.h> // signal()
 #include <unistd.h> // fork(), pipe(), etc.
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
+#include <pthread.h> // pthread_create(), pthread_cancel(), etc.
 
 #define MAX 10 // nº máximo de clientes
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
 
+int filho = 0;
 int stop = 0;
+int server_socket; // soquete do servidor
+int client_socket; // soquete do cliente
 
 void handle_sigint(int signum){
+    if(!filho){
+        printf("\nEncerrando servidor...\n");
+    }else{
+        printf("Encerrando processo filho...\n");
+    }
+
+    close(server_socket);
+    close(client_socket);
+
     stop = 1;
+
+    exit(EXIT_SUCCESS);
 }
-// função de tratamento do SIGINT (Ctrl+C)
+
+void *handle_in(void *arg);
+// função para lidar com o recebimento de mensagens dos clientes
+
+void *handle_out(void *arg);
+// função para lidar com o envio de mensagens aos clientes
 
 int main(int argc, char **argv){
     int i = 0; // contador
     int port; // porta
-    int server_socket; // soquete do servidor
-    int client_socket; // soquete do cliente
     struct sockaddr_in server_addr; // endereço do servidor
     struct sockaddr_in client_addr; // endereço do cliente
     socklen_t client_addr_len = sizeof(client_addr);
-    char buffer[BUFFER_SIZE];
 
     // trata os argumentos de execução
     if(argc < 2){
@@ -48,7 +65,7 @@ int main(int argc, char **argv){
     }
     //
 
-    signal(SIGINT, handle_sigint); // atribui o sinal de interrupção à função assíncrona
+    signal(SIGINT, handle_sigint);
 
     // criando o soquete do servidor
     printf("Criando o soquete do servidor...\n");
@@ -76,7 +93,7 @@ int main(int argc, char **argv){
     }
     //
 
-    // inicia o servidor
+    // iniciando o servidor
     if(listen(server_socket, MAX) == -1){
         perror("Erro ao iniciar o servidor.\n");
 
@@ -87,70 +104,127 @@ int main(int argc, char **argv){
     printf("\nO servidor on-line e escutando na porta %d!\n", port);
 
     // loop do servidor
-    while(1){
-        if(stop == 1)break;
-
-        // aceita uma nova conexão
+    while(!stop){
+        // laço de aceitação de uma nova conexão
         client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_addr_len);
         if(client_socket == -1){
             perror("Erro ao aceitar a conexão do cliente.\n");
 
             continue; // volta ao inicio do loop para tentar uma nova conexão
         }
-
-        printf("Novo cliente conectado!\n");
         //
 
-        // lógica de comunicação com o cliente
-        while(1){
-            if(stop == 1){
-                strcpy(buffer, "!exit\n");
+        // fazendo um processo filho para lidar com o cliente
+        pid_t pid = fork();
 
-                if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1)perror("Erro ao enviar mensagem ao cliente.\n");
+        if(pid == -1){
+            perror("Erro ao criar o processo filho.\n");
 
-                break;
-            }
+            continue;
+        }else if(pid == 0){
+            // processo filho
+            close(server_socket); // não aceita novas conexões no processo filho
 
-            // recebe mensagem do cliente
-            ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+            printf("Novo cliente conectado!\n");
 
-            if(recv_bytes <= 0){
-                if(recv_bytes == 0){
-                    printf("Conexão perdida com o cliente.\n");
-                }else{
-                    perror("Erro na recepção de dados do cliente.\n");
-                }
+            filho++; // indica que é um processo filho
+
+            pthread_t tid_in, tid_out; // "thread" id
+
+            // lógica de comunicação com o cliente
+            if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
+                perror("Erro ao criar thread para escutar o cliente.\n");
 
                 close(client_socket);
 
-                break; // termina a lógica de comunicação
+                exit(EXIT_FAILURE);
             }
 
-            buffer[recv_bytes] = '\0'; // certifica que a string termina
+            if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
+                perror("Erro ao criar thread para falar ao cliente.\n");
 
-            printf("Cliente: %s\n", buffer);
+                close(client_socket);
+
+                exit(EXIT_FAILURE);
+            }
             //
 
-            memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+            // espera o cliente parar de responder, isto é, o fim da thread
+            if(pthread_join(tid_in, NULL) != 0){
+                perror("Erro ao aguardar a thread.\n");
 
-            // envia resposta ao cliente
-            strcpy(buffer, "Ok!\n");
-            if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
-                perror("Erro ao enviar mensagem ao cliente.\n");
-
-                break;
+                close(client_socket);
+                
+                exit(EXIT_FAILURE);
             }
+            //
+
+            close(client_socket);
+
+            exit(EXIT_SUCCESS);
+            
+            //
+        }else{
+            // processo pai
+            close(client_socket); // o soquete do cliente agora está SOMENTE no processo filho
             //
         }
-
-        printf("Cliente desconectado.\n");
         //
     }
     //
 
-    printf("Encerrando servidor...\n");
-
     close(server_socket);
 
     exit(EXIT_SUCCESS);
+}
+
+void *handle_in(void *arg){
+    int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE];
+
+    while(!stop){
+        ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+
+        if(recv_bytes <= 0){
+            if(recv_bytes == 0){
+                printf("Conexão perdida com o cliente.\n");
+            }else{
+                perror("Erro na recepção de dados do cliente.\n");
+            }
+
+            break; // termina a lógica de comunicação
+        }
+
+        buffer[recv_bytes] = '\0'; // certifica que a string termina
+
+        printf("Cliente: %s\n", buffer);
+
+        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+    }
+
+    close(client_socket);
+
+    pthread_exit(NULL); // termina a thread
+}
+
+void *handle_out(void *arg){
+    int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE];
+
+    while(!stop){
+        strcpy(buffer, "Ok!\n");
+        if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
+            perror("Erro ao enviar mensagem ao cliente.\n");
+
+            break;
+        }
+
+        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+
+        sleep(1); // espera 1 segundo antes de enviar a próxima mensagem
+    }
+
+    close(client_socket);
+
+    pthread_exit(NULL);
 }

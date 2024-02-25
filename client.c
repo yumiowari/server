@@ -5,16 +5,22 @@
 #include <signal.h> // signal()
 #include <unistd.h> // fork(), pipe(), etc.
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
+#include <pthread.h> // pthread_create(), pthread_cancel(), etc.
 
 #define SERVER_IP "127.0.0.1" // endereço do servidor
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
+
+void *handle_in(void *arg);
+// função para lidar com o recebimento de mensagens do servidor
+
+void *handle_out(void *arg);
+// função para lidar com o envio de mensagens ao servidor
 
 int main(int argc, char **argv){
     int i = 0; // contador
     int port; // porta
     int client_socket; // soquete do servidor
     struct sockaddr_in server_addr; // endereço do servidor
-    char buffer[BUFFER_SIZE];
 
     // trata os argumentos de execução
     if(argc < 2){
@@ -70,42 +76,33 @@ int main(int argc, char **argv){
     }
     //
 
+    pthread_t tid_in, tid_out; // "thread" id
+
     // lógica de comunicação com o servidor
-    while(1){
-        printf("> ");
-        fgets(buffer, BUFFER_SIZE, stdin);
+    if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
+        perror("Erro ao criar thread para escutar o servidor.\n");
 
-        // envia mensagem ao servidor
-        if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
-            perror("Erro ao enviar mensagem ao servidor.\n");
+        close(client_socket);
 
-            break;
-        }
-        //
+        exit(EXIT_FAILURE);
+    }
 
-        if(strncmp(buffer, "!exit", 5) == 0){
-            printf("Terminando conexão com o servidor...\n");
+    if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
+        perror("Erro ao criar thread para falar ao servidor.\n");
 
-            break;
-        }
+        close(client_socket);
 
-        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        exit(EXIT_FAILURE);
+    }
+    //
 
-        // recebe mensagem do servidor
-        if(recv(client_socket, buffer, sizeof(buffer), 0) == -1){
-            perror("Erro ao receber mensagem do servidor.\n");
+    // espera o servidor parar de responder, isto é, o fim da thread
+    if(pthread_join(tid_in, NULL) != 0){
+        perror("Erro ao aguardar a thread.\n");
 
-            break;
-        }
-
-        if(strncmp(buffer, "!exit", 5) == 0){
-            printf("O servidor terminou a conexão.\n");
-
-            break;
-        }
-        //
-
-        printf("Resposta do servidor: %s\n", buffer);
+        close(client_socket);
+        
+        exit(EXIT_FAILURE);
     }
     //
 
@@ -114,4 +111,69 @@ int main(int argc, char **argv){
     close(client_socket);
 
     exit(EXIT_SUCCESS);
+}
+
+void *handle_in(void *arg){
+    int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE];
+
+    while(1){
+        ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+
+        if(recv_bytes <= 0){
+            if(recv_bytes == 0){
+                printf("\nConexão perdida com o servidor.\n");
+            }else{
+                perror("\nErro na recepção de dados do servidor.\n");
+            }
+
+            close(client_socket);
+
+            exit(EXIT_FAILURE);
+        }
+
+        buffer[recv_bytes] = '\0'; // certifica que a string termina
+
+        if(strncmp(buffer, "Ok!", 3) != 0){
+            printf("\nO servidor terminou a conexão.\n");
+
+            break;
+        }
+
+        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+    }
+
+    close(client_socket);
+
+    pthread_exit(NULL); // termina a thread
+}
+
+void *handle_out(void *arg){
+    int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE];
+
+    while(1){
+        printf("> ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+
+        if(strncmp(buffer, "!exit", 5) == 0){
+            printf("Terminando aplicação.\n");
+
+            close(client_socket);
+
+            exit(EXIT_FAILURE);
+        }
+
+        if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
+            perror("Erro ao enviar mensagem ao servidor.\n");
+
+            break;
+        }
+
+        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+    }
+
+    close(client_socket);
+
+    pthread_exit(NULL);
 }
