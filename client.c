@@ -6,7 +6,8 @@
 #include <unistd.h> // fork(), pipe(), etc.
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 
-#define BUFFER_SIZE 1024
+#define SERVER_IP "127.0.0.1" // endereço do servidor
+#define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
 
 int main(int argc, char **argv){
     int i = 0; // contador
@@ -50,12 +51,16 @@ int main(int argc, char **argv){
     // configurando o endereço do servidor
     printf("Configurando o endereço do servidor...\n");
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    if(inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr.s_addr) == -1){
+        perror("Erro ao converter o endereço IPv4.\n");
+
+        exit(EXIT_FAILURE);
+    }
     server_addr.sin_port = htons(port);
     //
 
     // conectando ao servidor
-    printf("Tentando conexão...\n");
+    printf("Estabelecendo conexão...\n");
     if(connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1){
         perror("Falha ao conectar ao servidor.\n");
 

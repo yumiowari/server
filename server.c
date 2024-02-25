@@ -7,7 +7,7 @@
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 
 #define MAX 10 // nº máximo de clientes
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
 
 int stop = 0;
 
@@ -88,7 +88,7 @@ int main(int argc, char **argv){
 
     // loop do servidor
     while(1){
-        if(stop)break;
+        if(stop == 1)break;
 
         // aceita uma nova conexão
         client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_addr_len);
@@ -103,7 +103,7 @@ int main(int argc, char **argv){
 
         // lógica de comunicação com o cliente
         while(1){
-            if(stop){
+            if(stop == 1){
                 strcpy(buffer, "!exit\n");
 
                 if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1)perror("Erro ao enviar mensagem ao cliente.\n");
