@@ -4,28 +4,31 @@
 #include <ctype.h> // isdigit()
 #include <signal.h> // signal()
 #include <unistd.h> // fork(), pipe(), etc.
+#include <stdbool.h> // true/false
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 #include <pthread.h> // pthread_create(), pthread_cancel(), etc.
+#include <limits.h> // INT_MAX
 
 #define MAX 10 // nº máximo de clientes
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
 
-int filho = 0;
-int stop = 0;
+int i = 0; // contador
+int filho = false;
+int stop = false;
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
 
 void handle_sigint(int signum){
-    if(!filho){
-        printf("\nEncerrando servidor...\n");
-    }else{
+    if(filho){
         printf("Encerrando processo filho...\n");
+    }else{
+        printf("\nEncerrando servidor...\n");
     }
 
     close(server_socket);
     close(client_socket);
 
-    stop = 1;
+    stop = true;
 
     exit(EXIT_SUCCESS);
 }
@@ -37,7 +40,6 @@ void *handle_out(void *arg);
 // função para lidar com o envio de mensagens aos clientes
 
 int main(int argc, char **argv){
-    int i = 0; // contador
     int port; // porta
     struct sockaddr_in server_addr; // endereço do servidor
     struct sockaddr_in client_addr; // endereço do cliente
@@ -103,6 +105,8 @@ int main(int argc, char **argv){
 
     printf("\nO servidor on-line e escutando na porta %d!\n", port);
 
+    i = 0; // agora o contador indica o id do cliente, isto é, congruente à órdem de login
+
     // loop do servidor
     while(!stop){
         // laço de aceitação de uma nova conexão
@@ -113,6 +117,11 @@ int main(int argc, char **argv){
             continue; // volta ao inicio do loop para tentar uma nova conexão
         }
         //
+
+        if(i < (INT_MAX - 1)){
+            i++; // o primeiro id é 1
+        }else i = 1; // reinicia (impede estouro de inteiro)
+        
 
         // fazendo um processo filho para lidar com o cliente
         pid_t pid = fork();
@@ -127,7 +136,7 @@ int main(int argc, char **argv){
 
             printf("Novo cliente conectado!\n");
 
-            filho++; // indica que é um processo filho
+            filho = true; // indica que é um processo filho
 
             pthread_t tid_in, tid_out; // "thread" id
 
@@ -185,6 +194,8 @@ void *handle_in(void *arg){
     while(!stop){
         ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
 
+        printf("%ld\n", recv_bytes);
+
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
                 printf("Conexão perdida com o cliente.\n");
@@ -197,7 +208,9 @@ void *handle_in(void *arg){
 
         buffer[recv_bytes] = '\0'; // certifica que a string termina
 
-        printf("Cliente: %s\n", buffer);
+        if(buffer[0] != '\0'){ // impede de imprimir "lixo" quando o cliente encerra indevidamente
+            printf("Cliente %d: %s\n", i, buffer);
+        }
 
         memset(buffer, 0, sizeof(buffer)); // limpa o buffer
     }
