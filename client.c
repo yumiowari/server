@@ -19,16 +19,17 @@ void *handle_out(void *arg);
 int main(int argc, char **argv){
     int i = 0; // contador
     int port; // porta
+    char nome[16]; // nome de usuário
     int client_socket; // soquete do servidor
     struct sockaddr_in server_addr; // endereço do servidor
 
     // trata os argumentos de execução
-    if(argc < 2){
-        fprintf(stderr, "Argumentos insuficientes. Uso: %s <porta>\n", argv[0]);
+    if(argc < 3){
+        fprintf(stderr, "Argumentos insuficientes. Uso: %s <porta> <nome de usuário>\n", argv[0]);
 
         exit(EXIT_FAILURE);
-    }else if(argc > 2){
-        fprintf(stderr, "Muitos argumentos. Uso: %s <porta>\n", argv[0]);
+    }else if(argc > 3){
+        fprintf(stderr, "Muitos argumentos. Uso: %s <porta> <nome de usuário>\n", argv[0]);
 
         exit(EXIT_FAILURE);
     }else{
@@ -40,7 +41,15 @@ int main(int argc, char **argv){
             }
         }
 
+        if(strlen(argv[2]) > 15){
+            fprintf(stderr, "O nome de usuario não pode ultrapassar 15 caracteres.\n");
+
+            exit(EXIT_FAILURE);
+        }
+
         port = atoi(argv[1]);
+
+        strncpy(nome, argv[2], strlen(argv[2]));
     }
     //
 
@@ -77,6 +86,16 @@ int main(int argc, char **argv){
     //
 
     pthread_t tid_in, tid_out; // "thread" id
+
+    // informa o nome de usuário ao servidor
+    if(send(client_socket, nome, 16, 0) == -1){
+            perror("Erro ao informar o nome de usuário ao servidor.\n");
+
+            close(client_socket);
+
+            exit(EXIT_FAILURE);
+        }
+    //
 
     // lógica de comunicação com o servidor
     if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){

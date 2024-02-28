@@ -17,6 +17,7 @@ int filho = false;
 int stop = false;
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
+char nome[16]; // nome de usuário
 
 void handle_sigint(int signum){
     if(filho){
@@ -118,6 +119,18 @@ int main(int argc, char **argv){
         }
         //
 
+        // recebe o nome de usuário
+        ssize_t recv_bytes = recv(client_socket, nome, 16, 0);
+
+        if(recv_bytes <= 0){
+            perror("Falha ao receber o nome do usuário do cliente.\n");
+
+            close(client_socket);
+
+            continue;
+        }
+        //
+
         if(i < (INT_MAX - 1)){
             i++; // o primeiro id é 1
         }else i = 1; // reinicia (impede estouro de inteiro)
@@ -134,7 +147,7 @@ int main(int argc, char **argv){
             // processo filho
             close(server_socket); // não aceita novas conexões no processo filho
 
-            printf("Novo cliente conectado!\n");
+            printf("%s se juntou ao chat!\n", nome);
 
             filho = true; // indica que é um processo filho
 
@@ -194,8 +207,6 @@ void *handle_in(void *arg){
     while(!stop){
         ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
 
-        printf("%ld\n", recv_bytes);
-
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
                 printf("Conexão perdida com o cliente.\n");
@@ -209,7 +220,7 @@ void *handle_in(void *arg){
         buffer[recv_bytes] = '\0'; // certifica que a string termina
 
         if(buffer[0] != '\0'){ // impede de imprimir "lixo" quando o cliente encerra indevidamente
-            printf("Cliente %d: %s\n", i, buffer);
+            printf("%s (%d): %s\n", nome, i, buffer);
         }
 
         memset(buffer, 0, sizeof(buffer)); // limpa o buffer
