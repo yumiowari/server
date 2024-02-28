@@ -1,14 +1,34 @@
+// bibliotecas
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h> // isdigit()
 #include <signal.h> // signal()
 #include <unistd.h> // fork(), pipe(), etc.
+#include <stdbool.h> // true/false
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 #include <pthread.h> // pthread_create(), pthread_cancel(), etc.
+//
 
+// macros
 #define SERVER_IP "127.0.0.1" // endereço do servidor
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
+//
+
+// variáveis globais
+int i = 0; // contador
+bool stop = false;
+int client_socket; // soquete do servidor
+char nome[16]; // nome de usuário
+//
+
+// funções
+
+void shutdown_routine(int signal);
+// rotina de encerramento do servidor
+
+void handle_sigint(int signal);
+// função para lidar com o sinal de interrupção (Ctrl+C)
 
 void *handle_in(void *arg);
 // função para lidar com o recebimento de mensagens do servidor
@@ -16,35 +36,34 @@ void *handle_in(void *arg);
 void *handle_out(void *arg);
 // função para lidar com o envio de mensagens ao servidor
 
+//
+
 int main(int argc, char **argv){
-    int i = 0; // contador
     int port; // porta
-    char nome[16]; // nome de usuário
-    int client_socket; // soquete do servidor
     struct sockaddr_in server_addr; // endereço do servidor
 
     // trata os argumentos de execução
     if(argc < 3){
         fprintf(stderr, "Argumentos insuficientes. Uso: %s <porta> <nome de usuário>\n", argv[0]);
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }else if(argc > 3){
         fprintf(stderr, "Muitos argumentos. Uso: %s <porta> <nome de usuário>\n", argv[0]);
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }else{
         for(i = 0; i < strlen(argv[1]); i++){
             if(!isdigit(argv[1][i])){
                 fprintf(stderr, "A porta deve ser um inteiro.\n");
 
-                exit(EXIT_FAILURE);
+                shutdown_routine(1);
             }
         }
 
         if(strlen(argv[2]) > 15){
             fprintf(stderr, "O nome de usuario não pode ultrapassar 15 caracteres.\n");
 
-            exit(EXIT_FAILURE);
+            shutdown_routine(1);
         }
 
         port = atoi(argv[1]);
@@ -53,13 +72,15 @@ int main(int argc, char **argv){
     }
     //
 
+    signal(SIGINT, handle_sigint);
+
     // criando o soquete de cliente
     printf("Criando o soquete de cliente...\n");
     client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(client_socket == -1){
         perror("Erro ao criar o soquete de cliente.\n");
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -69,7 +90,7 @@ int main(int argc, char **argv){
     if(inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr.s_addr) == -1){
         perror("Erro ao converter o endereço IPv4.\n");
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     server_addr.sin_port = htons(port);
     //
@@ -79,9 +100,7 @@ int main(int argc, char **argv){
     if(connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1){
         perror("Falha ao conectar ao servidor.\n");
 
-        close(client_socket);
-
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -91,9 +110,7 @@ int main(int argc, char **argv){
     if(send(client_socket, nome, 16, 0) == -1){
             perror("Erro ao informar o nome de usuário ao servidor.\n");
 
-            close(client_socket);
-
-            exit(EXIT_FAILURE);
+            shutdown_routine(1);
         }
     //
 
@@ -101,17 +118,13 @@ int main(int argc, char **argv){
     if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
         perror("Erro ao criar thread para escutar o servidor.\n");
 
-        close(client_socket);
-
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
 
     if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
         perror("Erro ao criar thread para falar ao servidor.\n");
 
-        close(client_socket);
-
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -119,17 +132,11 @@ int main(int argc, char **argv){
     if(pthread_join(tid_in, NULL) != 0){
         perror("Erro ao aguardar a thread.\n");
 
-        close(client_socket);
-        
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
-
-    printf("Encerrando aplicação...\n");
     
-    close(client_socket);
-
-    exit(EXIT_SUCCESS);
+    shutdown_routine(0);
 }
 
 void *handle_in(void *arg){
@@ -146,9 +153,7 @@ void *handle_in(void *arg){
                 perror("\nErro na recepção de dados do servidor.\n");
             }
 
-            close(client_socket);
-
-            exit(EXIT_FAILURE);
+            shutdown_routine(1);
         }
 
         buffer[recv_bytes] = '\0'; // certifica que a string termina
@@ -176,11 +181,7 @@ void *handle_out(void *arg){
         fgets(buffer, BUFFER_SIZE, stdin);
 
         if(strncmp(buffer, "!exit", 5) == 0){
-            printf("Terminando aplicação.\n");
-
-            close(client_socket);
-
-            exit(EXIT_FAILURE);
+            shutdown_routine(0);
         }
 
         if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
@@ -195,4 +196,22 @@ void *handle_out(void *arg){
     close(client_socket);
 
     pthread_exit(NULL);
+}
+
+void shutdown_routine(int signal){
+    printf("\nEncerrando aplicação...\n");
+
+    if(client_socket != -1)close(client_socket);
+
+    if(signal == 0){
+        exit(EXIT_SUCCESS);
+    }else exit(EXIT_FAILURE);
+}
+
+void handle_sigint(int signal){
+    if(signal == 2){
+        stop = true; // se for Ctrl+C
+
+        shutdown_routine(0);
+    }
 }

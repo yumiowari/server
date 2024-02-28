@@ -13,26 +13,17 @@
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
 
 int i = 0; // contador
-int filho = false;
-int stop = false;
+bool filho = false;
+bool stop = false;
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
 char nome[16]; // nome de usuário
 
-void handle_sigint(int signum){
-    if(filho){
-        printf("Encerrando processo filho...\n");
-    }else{
-        printf("\nEncerrando servidor...\n");
-    }
+void shutdown_routine(int signal);
+// rotina de encerramento do servidor
 
-    close(server_socket);
-    close(client_socket);
-
-    stop = true;
-
-    exit(EXIT_SUCCESS);
-}
+void handle_sigint(int signal);
+// função para lidar com o sinal de interrupção (Ctrl+C)
 
 void *handle_in(void *arg);
 // função para lidar com o recebimento de mensagens dos clientes
@@ -50,17 +41,17 @@ int main(int argc, char **argv){
     if(argc < 2){
         fprintf(stderr, "Argumentos insuficientes. Uso: %s <porta>\n", argv[0]);
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }else if(argc > 2){
         fprintf(stderr, "Muitos argumentos. Uso: %s <porta>\n", argv[0]);
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }else{
         for(i = 0; i < strlen(argv[1]); i++){
             if(!isdigit(argv[1][i])){
                 fprintf(stderr, "A porta deve ser um inteiro.\n");
 
-                exit(EXIT_FAILURE);
+                shutdown_routine(1);
             }
         }
 
@@ -76,7 +67,7 @@ int main(int argc, char **argv){
     if(server_socket == -1){
         perror("Erro ao criar o soquete do servidor.\n");
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -92,7 +83,7 @@ int main(int argc, char **argv){
     if(bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1){
         perror("Erro ao vincular o soquete à porta.\n");
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -100,7 +91,7 @@ int main(int argc, char **argv){
     if(listen(server_socket, MAX) == -1){
         perror("Erro ao iniciar o servidor.\n");
 
-        exit(EXIT_FAILURE);
+        shutdown_routine(1);
     }
     //
 
@@ -157,17 +148,13 @@ int main(int argc, char **argv){
             if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
                 perror("Erro ao criar thread para escutar o cliente.\n");
 
-                close(client_socket);
-
-                exit(EXIT_FAILURE);
+                shutdown_routine(1);
             }
 
             if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
                 perror("Erro ao criar thread para falar ao cliente.\n");
 
-                close(client_socket);
-
-                exit(EXIT_FAILURE);
+                shutdown_routine(1);
             }
             //
 
@@ -175,15 +162,11 @@ int main(int argc, char **argv){
             if(pthread_join(tid_in, NULL) != 0){
                 perror("Erro ao aguardar a thread.\n");
 
-                close(client_socket);
-                
-                exit(EXIT_FAILURE);
+                shutdown_routine(1);
             }
             //
 
-            close(client_socket);
-
-            exit(EXIT_SUCCESS);
+            shutdown_routine(0);
             
             //
         }else{
@@ -195,9 +178,7 @@ int main(int argc, char **argv){
     }
     //
 
-    close(server_socket);
-
-    exit(EXIT_SUCCESS);
+    shutdown_routine(0);
 }
 
 void *handle_in(void *arg){
@@ -251,4 +232,27 @@ void *handle_out(void *arg){
     close(client_socket);
 
     pthread_exit(NULL);
+}
+
+void shutdown_routine(int signal){
+    if(filho){
+        printf("Encerrando processo filho...\n");
+    }else{
+        printf("\nEncerrando servidor...\n");
+    }
+
+    if(server_socket != -1)close(server_socket);
+    if(client_socket != -1)close(client_socket);
+
+    if(signal == 0){
+        exit(EXIT_SUCCESS);
+    }else exit(EXIT_FAILURE);
+}
+
+void handle_sigint(int signal){
+    if(signal == 2){
+        stop = true; // se for Ctrl+C
+
+        shutdown_routine(0);
+    }
 }
