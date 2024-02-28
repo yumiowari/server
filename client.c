@@ -108,20 +108,20 @@ int main(int argc, char **argv){
 
     // informa o nome de usuário ao servidor
     if(send(client_socket, nome, 16, 0) == -1){
-            perror("Erro ao informar o nome de usuário ao servidor.\n");
+            perror("Falha ao informar o nome de usuário ao servidor.\n");
 
             shutdown_routine(1);
         }
     //
 
     // lógica de comunicação com o servidor
-    if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
+    if(pthread_create(&tid_in, NULL, handle_in, NULL) != 0){
         perror("Erro ao criar thread para escutar o servidor.\n");
 
         shutdown_routine(1);
     }
 
-    if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
+    if(pthread_create(&tid_out, NULL, handle_out, NULL) != 0){
         perror("Erro ao criar thread para falar ao servidor.\n");
 
         shutdown_routine(1);
@@ -140,11 +140,12 @@ int main(int argc, char **argv){
 }
 
 void *handle_in(void *arg){
-    int client_socket = *((int *)arg);
-    char buffer[BUFFER_SIZE];
+    //int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE]; // buffer para a mensagem
+    ssize_t recv_bytes; // qtd de bytes recebidos
 
     while(1){
-        ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+        recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
 
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
@@ -173,8 +174,8 @@ void *handle_in(void *arg){
 }
 
 void *handle_out(void *arg){
-    int client_socket = *((int *)arg);
-    char buffer[BUFFER_SIZE];
+    //int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE]; // buffer para a mensagem
 
     while(1){
         printf("> ");

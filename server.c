@@ -1,3 +1,4 @@
+// bibliotecas
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,16 +9,24 @@
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 #include <pthread.h> // pthread_create(), pthread_cancel(), etc.
 #include <limits.h> // INT_MAX
+#include <time.h>
+//
 
+// macros
 #define MAX 10 // nº máximo de clientes
 #define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
+//
 
+// variáveis globais
 int i = 0; // contador
 bool filho = false;
 bool stop = false;
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
 char nome[16]; // nome de usuário
+//
+
+// funções
 
 void shutdown_routine(int signal);
 // rotina de encerramento do servidor
@@ -30,6 +39,8 @@ void *handle_in(void *arg);
 
 void *handle_out(void *arg);
 // função para lidar com o envio de mensagens aos clientes
+
+//
 
 int main(int argc, char **argv){
     int port; // porta
@@ -114,7 +125,7 @@ int main(int argc, char **argv){
         ssize_t recv_bytes = recv(client_socket, nome, 16, 0);
 
         if(recv_bytes <= 0){
-            perror("Falha ao receber o nome do usuário do cliente.\n");
+            perror("Falha na recepção do nome de usuário do cliente.\n");
 
             close(client_socket);
 
@@ -145,13 +156,13 @@ int main(int argc, char **argv){
             pthread_t tid_in, tid_out; // "thread" id
 
             // lógica de comunicação com o cliente
-            if(pthread_create(&tid_in, NULL, handle_in, (void*)&client_socket) != 0){
+            if(pthread_create(&tid_in, NULL, handle_in, NULL) != 0){
                 perror("Erro ao criar thread para escutar o cliente.\n");
 
                 shutdown_routine(1);
             }
 
-            if(pthread_create(&tid_out, NULL, handle_out, (void*)&client_socket) != 0){
+            if(pthread_create(&tid_out, NULL, handle_out, NULL) != 0){
                 perror("Erro ao criar thread para falar ao cliente.\n");
 
                 shutdown_routine(1);
@@ -182,11 +193,15 @@ int main(int argc, char **argv){
 }
 
 void *handle_in(void *arg){
-    int client_socket = *((int *)arg);
-    char buffer[BUFFER_SIZE];
+    //int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE]; // buffer para a mensagem
+    ssize_t recv_bytes; // qtd de bytes recebidos
+    char time_buffer[20];
+    time_t rawtime;
+    struct tm *timeinfo;
 
     while(!stop){
-        ssize_t recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+        recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
 
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
@@ -200,8 +215,14 @@ void *handle_in(void *arg){
 
         buffer[recv_bytes] = '\0'; // certifica que a string termina
 
+        time(&rawtime);
+
+        timeinfo = localtime(&rawtime);
+
+        strftime(time_buffer, sizeof(time_buffer), "%d/%m/%Y %H:%M:%S", timeinfo);
+
         if(buffer[0] != '\0'){ // impede de imprimir "lixo" quando o cliente encerra indevidamente
-            printf("%s (%d): %s\n", nome, i, buffer);
+            printf("[%d] %s (%s): %s\n", i, nome, time_buffer, buffer);
         }
 
         memset(buffer, 0, sizeof(buffer)); // limpa o buffer
@@ -213,8 +234,8 @@ void *handle_in(void *arg){
 }
 
 void *handle_out(void *arg){
-    int client_socket = *((int *)arg);
-    char buffer[BUFFER_SIZE];
+    //int client_socket = *((int *)arg);
+    char buffer[BUFFER_SIZE]; // buffer para a mensagem
 
     while(!stop){
         strcpy(buffer, "Ok!\n");
