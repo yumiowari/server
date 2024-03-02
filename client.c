@@ -12,14 +12,14 @@
 
 // macros
 #define SERVER_IP "127.0.0.1" // endereço do servidor
-#define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
+#define BUFFER_SIZE 1024 // tamanho do buffer para envio e recebimento de mensagens
 //
 
 // variáveis globais
 int i = 0; // contador
-bool stop = false;
+bool stop = false; // deve parar?
 int client_socket; // soquete do servidor
-char nome[16]; // nome de usuário
+char client_name[16]; // nome de usuário
 //
 
 // funções
@@ -30,6 +30,9 @@ void shutdown_routine(int signal);
 void handle_sigint(int signal);
 // função para lidar com o sinal de interrupção (Ctrl+C)
 
+void handle_sigterm(int signal);
+// função para lidar com o sinal de encerramento (fecha o terminal)
+
 void *handle_in(void *arg);
 // função para lidar com o recebimento de mensagens do servidor
 
@@ -39,6 +42,9 @@ void *handle_out(void *arg);
 //
 
 int main(int argc, char **argv){
+    signal(SIGINT, handle_sigint);
+    signal(SIGTERM, handle_sigterm);
+
     int port; // porta
     struct sockaddr_in server_addr; // endereço do servidor
 
@@ -68,15 +74,13 @@ int main(int argc, char **argv){
 
         port = atoi(argv[1]);
 
-        strncpy(nome, argv[2], strlen(argv[2]));
+        strncpy(client_name, argv[2], strlen(argv[2]));
     }
     //
 
-    signal(SIGINT, handle_sigint);
-
     // criando o soquete de cliente
-    printf("Criando o soquete de cliente...\n");
-    client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    printf("Fazendo o soquete de cliente...\n");
+    client_socket = socket(AF_INET, SOCK_STREAM, 0); // TCP e IPv4
     if(client_socket == -1){
         perror("Erro ao criar o soquete de cliente.\n");
 
@@ -87,7 +91,7 @@ int main(int argc, char **argv){
     // configurando o endereço do servidor
     printf("Configurando o endereço do servidor...\n");
     server_addr.sin_family = AF_INET;
-    if(inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr.s_addr) == -1){
+    if(inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr.s_addr) == -1){ // conecta somente no endereço IPv4 do servidor
         perror("Erro ao converter o endereço IPv4.\n");
 
         shutdown_routine(1);
@@ -104,10 +108,10 @@ int main(int argc, char **argv){
     }
     //
 
-    pthread_t tid_in, tid_out; // "thread" id
+    pthread_t tid_in, tid_out; // "thread" ID
 
     // informa o nome de usuário ao servidor
-    if(send(client_socket, nome, 16, 0) == -1){
+    if(send(client_socket, client_name, 16, 0) == -1){
             perror("Falha ao informar o nome de usuário ao servidor.\n");
 
             shutdown_routine(1);
@@ -139,13 +143,38 @@ int main(int argc, char **argv){
     shutdown_routine(0);
 }
 
+void shutdown_routine(int signal){
+    printf("\nEncerrando aplicação...\n");
+
+    if(client_socket != -1)close(client_socket);
+
+    if(signal == 0){
+        exit(EXIT_SUCCESS);
+    }else exit(EXIT_FAILURE);
+}
+
+void handle_sigint(int signal){
+    if(signal == SIGINT){ // se for Ctrl+C
+        stop = true;
+
+        shutdown_routine(0);
+    }
+}
+
+void handle_sigterm(int signal){
+    if(signal == SIGTERM){ // se fechar pelo X
+        stop = true;
+
+        shutdown_routine(0);
+    }
+}
+
 void *handle_in(void *arg){
-    //int client_socket = *((int *)arg);
     char buffer[BUFFER_SIZE]; // buffer para a mensagem
     ssize_t recv_bytes; // qtd de bytes recebidos
 
-    while(1){
-        recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+    while(!stop){
+        recv_bytes = recv(client_socket, buffer, BUFFER_SIZE, 0);
 
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
@@ -165,7 +194,7 @@ void *handle_in(void *arg){
             break;
         }
 
-        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(client_socket);
@@ -174,10 +203,9 @@ void *handle_in(void *arg){
 }
 
 void *handle_out(void *arg){
-    //int client_socket = *((int *)arg);
     char buffer[BUFFER_SIZE]; // buffer para a mensagem
 
-    while(1){
+    while(!stop){
         printf("> ");
         fgets(buffer, BUFFER_SIZE, stdin);
 
@@ -191,28 +219,10 @@ void *handle_out(void *arg){
             break;
         }
 
-        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(client_socket);
 
     pthread_exit(NULL);
-}
-
-void shutdown_routine(int signal){
-    printf("\nEncerrando aplicação...\n");
-
-    if(client_socket != -1)close(client_socket);
-
-    if(signal == 0){
-        exit(EXIT_SUCCESS);
-    }else exit(EXIT_FAILURE);
-}
-
-void handle_sigint(int signal){
-    if(signal == 2){
-        stop = true; // se for Ctrl+C
-
-        shutdown_routine(0);
-    }
 }

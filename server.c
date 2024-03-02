@@ -7,23 +7,24 @@
 #include <unistd.h> // fork(), pipe(), etc.
 #include <stdbool.h> // true/false
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
+#include <sys/wait.h>
 #include <pthread.h> // pthread_create(), pthread_cancel(), etc.
 #include <limits.h> // INT_MAX
 #include <time.h>
 //
 
 // macros
-#define MAX 10 // nº máximo de clientes
-#define BUFFER_SIZE 1024 // buffer para envio e recebimento de mensagens
+#define MAX_QUEUE 5 // nº máximo de clientes na fila
+#define BUFFER_SIZE 1024 // tamanho do buffer para envio e recebimento de mensagens
 //
 
 // variáveis globais
 int i = 0; // contador
-bool filho = false;
-bool stop = false;
+bool child = false; // é filho?
+bool stop = false; // deve parar?
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
-char nome[16]; // nome de usuário
+char client_name[16]; // nome de usuário
 //
 
 // funções
@@ -34,19 +35,25 @@ void shutdown_routine(int signal);
 void handle_sigint(int signal);
 // função para lidar com o sinal de interrupção (Ctrl+C)
 
-void *handle_in(void *arg);
+void handle_sigterm(int signal);
+// função para lidar com o sinal de encerramento (fecha o terminal)
+
+void *handle_msg_in(void *arg);
 // função para lidar com o recebimento de mensagens dos clientes
 
-void *handle_out(void *arg);
+void *handle_msg_out(void *arg);
 // função para lidar com o envio de mensagens aos clientes
 
 //
 
 int main(int argc, char **argv){
+    signal(SIGINT, handle_sigint);
+    signal(SIGTERM, handle_sigterm);
+
     int port; // porta
     struct sockaddr_in server_addr; // endereço do servidor
-    struct sockaddr_in client_addr; // endereço do cliente
-    socklen_t client_addr_len = sizeof(client_addr);
+    struct sockaddr_in client_addr; // endereço de cliente
+    socklen_t client_addr_len = sizeof(client_addr); // tamanho do endereço de cliente
 
     // trata os argumentos de execução
     if(argc < 2){
@@ -70,11 +77,9 @@ int main(int argc, char **argv){
     }
     //
 
-    signal(SIGINT, handle_sigint);
-
     // criando o soquete do servidor
-    printf("Criando o soquete do servidor...\n");
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    printf("Fazendo o soquete do servidor...\n");
+    server_socket = socket(AF_INET, SOCK_STREAM, 0); // TCP e IPv4
     if(server_socket == -1){
         perror("Erro ao criar o soquete do servidor.\n");
 
@@ -85,7 +90,7 @@ int main(int argc, char **argv){
     // configurando o endereço do servidor
     printf("Configurando o endereço do servidor...\n");
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_addr.s_addr = INADDR_ANY; // aceita conexão de qualquer fonte
     server_addr.sin_port = htons(port);
     //
 
@@ -99,20 +104,20 @@ int main(int argc, char **argv){
     //
 
     // iniciando o servidor
-    if(listen(server_socket, MAX) == -1){
+    if(listen(server_socket, MAX_QUEUE) == -1){
         perror("Erro ao iniciar o servidor.\n");
 
         shutdown_routine(1);
     }
     //
 
-    printf("\nO servidor on-line e escutando na porta %d!\n", port);
+    printf("\nServidor on-line e escutando na porta %d!\n", port);
 
-    i = 0; // agora o contador indica o id do cliente, isto é, congruente à órdem de login
+    i = 0; // agora o contador indica o id do cliente, isto é, congruente à ordem de login
 
     // loop do servidor
     while(!stop){
-        // laço de aceitação de uma nova conexão
+        // laço para aceitação de uma nova conexão
         client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_addr_len);
         if(client_socket == -1){
             perror("Erro ao aceitar a conexão do cliente.\n");
@@ -122,7 +127,7 @@ int main(int argc, char **argv){
         //
 
         // recebe o nome de usuário
-        ssize_t recv_bytes = recv(client_socket, nome, 16, 0);
+        ssize_t recv_bytes = recv(client_socket, client_name, 16, 0);
 
         if(recv_bytes <= 0){
             perror("Falha na recepção do nome de usuário do cliente.\n");
@@ -149,27 +154,27 @@ int main(int argc, char **argv){
             // processo filho
             close(server_socket); // não aceita novas conexões no processo filho
 
-            printf("%s se juntou ao chat!\n", nome);
+            printf("%s se juntou ao chat!\n", client_name);
 
-            filho = true; // indica que é um processo filho
+            child = true; // indica que é um processo filho
 
-            pthread_t tid_in, tid_out; // "thread" id
+            pthread_t tid_in, tid_out; // "thread" ID
 
             // lógica de comunicação com o cliente
-            if(pthread_create(&tid_in, NULL, handle_in, NULL) != 0){
+            if(pthread_create(&tid_in, NULL, handle_msg_in, NULL) != 0){
                 perror("Erro ao criar thread para escutar o cliente.\n");
 
                 shutdown_routine(1);
             }
 
-            if(pthread_create(&tid_out, NULL, handle_out, NULL) != 0){
+            if(pthread_create(&tid_out, NULL, handle_msg_out, NULL) != 0){
                 perror("Erro ao criar thread para falar ao cliente.\n");
 
                 shutdown_routine(1);
             }
             //
 
-            // espera o cliente parar de responder, isto é, o fim da thread
+            // espera o cliente parar de responder
             if(pthread_join(tid_in, NULL) != 0){
                 perror("Erro ao aguardar a thread.\n");
 
@@ -178,11 +183,10 @@ int main(int argc, char **argv){
             //
 
             shutdown_routine(0);
-            
             //
         }else{
             // processo pai
-            close(client_socket); // o soquete do cliente agora está SOMENTE no processo filho
+            close(client_socket); // somente o processo filho lida com o cliente
             //
         }
         //
@@ -192,8 +196,39 @@ int main(int argc, char **argv){
     shutdown_routine(0);
 }
 
-void *handle_in(void *arg){
-    //int client_socket = *((int *)arg);
+void shutdown_routine(int signal){
+    if(child){
+        printf("Encerrando processo filho...\n");
+    }else{
+        while(waitpid(-1, NULL, WNOHANG) > 0); // espera por todos os processos filhos (redundante?)
+        printf("\nEncerrando servidor...\n");
+    }
+
+    if(server_socket != -1)close(server_socket);
+    if(client_socket != -1)close(client_socket);
+
+    if(signal == 0){
+        exit(EXIT_SUCCESS);
+    }else exit(EXIT_FAILURE);
+}
+
+void handle_sigint(int signal){
+    if(signal == SIGINT){ // se for Ctrl+C
+        stop = true;
+
+        shutdown_routine(0);
+    }
+}
+
+void handle_sigterm(int signal){
+    if(signal == SIGTERM){ // se fechar pelo X
+        stop = true;
+
+        shutdown_routine(0);
+    }
+}
+
+void *handle_msg_in(void *arg){
     char buffer[BUFFER_SIZE]; // buffer para a mensagem
     ssize_t recv_bytes; // qtd de bytes recebidos
     char time_buffer[20];
@@ -201,7 +236,7 @@ void *handle_in(void *arg){
     struct tm *timeinfo;
 
     while(!stop){
-        recv_bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+        recv_bytes = recv(client_socket, buffer, BUFFER_SIZE, 0);
 
         if(recv_bytes <= 0){
             if(recv_bytes == 0){
@@ -222,10 +257,10 @@ void *handle_in(void *arg){
         strftime(time_buffer, sizeof(time_buffer), "%d/%m/%Y %H:%M:%S", timeinfo);
 
         if(buffer[0] != '\0'){ // impede de imprimir "lixo" quando o cliente encerra indevidamente
-            printf("[%d] %s (%s): %s\n", i, nome, time_buffer, buffer);
+            printf("[%d] %s (%s): %s\n", i, client_name, time_buffer, buffer);
         }
 
-        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(client_socket);
@@ -233,8 +268,7 @@ void *handle_in(void *arg){
     pthread_exit(NULL); // termina a thread
 }
 
-void *handle_out(void *arg){
-    //int client_socket = *((int *)arg);
+void *handle_msg_out(void *arg){
     char buffer[BUFFER_SIZE]; // buffer para a mensagem
 
     while(!stop){
@@ -245,7 +279,7 @@ void *handle_out(void *arg){
             break;
         }
 
-        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
 
         sleep(1); // espera 1 segundo antes de enviar a próxima mensagem
     }
@@ -253,27 +287,4 @@ void *handle_out(void *arg){
     close(client_socket);
 
     pthread_exit(NULL);
-}
-
-void shutdown_routine(int signal){
-    if(filho){
-        printf("Encerrando processo filho...\n");
-    }else{
-        printf("\nEncerrando servidor...\n");
-    }
-
-    if(server_socket != -1)close(server_socket);
-    if(client_socket != -1)close(client_socket);
-
-    if(signal == 0){
-        exit(EXIT_SUCCESS);
-    }else exit(EXIT_FAILURE);
-}
-
-void handle_sigint(int signal){
-    if(signal == 2){
-        stop = true; // se for Ctrl+C
-
-        shutdown_routine(0);
-    }
 }
