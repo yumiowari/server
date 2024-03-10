@@ -4,11 +4,10 @@
 #include <string.h>
 #include <ctype.h> // isdigit()
 #include <signal.h> // signal()
-#include <unistd.h> // fork(), pipe(), etc.
-#include <stdbool.h> // true/false
+#include <stdbool.h> // tipo booleano
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
-#include <sys/wait.h>
-#include <pthread.h> // pthread_create(), pthread_cancel(), etc.
+#include <pthread.h> // manipulação de threads
+#include <unistd.h> // manipulação de processos
 #include <limits.h> // INT_MAX
 #include <time.h>
 //
@@ -47,8 +46,10 @@ void *handle_msg_out(void *arg);
 //
 
 int main(int argc, char **argv){
+    // configura os sinais
     signal(SIGINT, handle_sigint);
     signal(SIGTERM, handle_sigterm);
+    //
 
     int port; // porta
     struct sockaddr_in server_addr; // endereço do servidor
@@ -138,10 +139,7 @@ int main(int argc, char **argv){
         }
         //
 
-        if(i < (INT_MAX - 1)){
-            i++; // o primeiro id é 1
-        }else i = 1; // reinicia (impede estouro de inteiro)
-        
+        i = (i < (INT_MAX - 1)) ? i + 1 : 1; // impede estouro de inteiro
 
         // fazendo um processo filho para lidar com o cliente
         pid_t pid = fork();
@@ -197,19 +195,12 @@ int main(int argc, char **argv){
 }
 
 void shutdown_routine(int signal){
-    if(child){
-        printf("Encerrando processo filho...\n");
-    }else{
-        while(waitpid(-1, NULL, WNOHANG) > 0); // espera por todos os processos filhos (redundante?)
-        printf("\nEncerrando servidor...\n");
-    }
+    child == true ? printf("Encerrando processo filho...\n") : printf("\nEncerrando servidor...\n");
 
-    if(server_socket != -1)close(server_socket);
-    if(client_socket != -1)close(client_socket);
+    server_socket != -1 ? close(server_socket) : false;
+    client_socket != -1 ? close(client_socket) : false;
 
-    if(signal == 0){
-        exit(EXIT_SUCCESS);
-    }else exit(EXIT_FAILURE);
+    signal == 0 ? exit(EXIT_SUCCESS) : exit(EXIT_FAILURE);
 }
 
 void handle_sigint(int signal){
@@ -239,11 +230,7 @@ void *handle_msg_in(void *arg){
         recv_bytes = recv(client_socket, buffer, BUFFER_SIZE, 0);
 
         if(recv_bytes <= 0){
-            if(recv_bytes == 0){
-                printf("Conexão perdida com o cliente.\n");
-            }else{
-                perror("Erro na recepção de dados do cliente.\n");
-            }
+            recv_bytes == 0 ? printf("Conexão perdida com o cliente.\n") : perror("Erro na recepção de dados do cliente.\n");
 
             break; // termina a lógica de comunicação
         }
@@ -254,18 +241,16 @@ void *handle_msg_in(void *arg){
 
         timeinfo = localtime(&rawtime);
 
-        strftime(time_buffer, sizeof(time_buffer), "%d/%m/%Y %H:%M:%S", timeinfo);
+        strftime(time_buffer, sizeof(time_buffer), "%H:%M", timeinfo);
 
-        if(buffer[0] != '\0'){ // impede de imprimir "lixo" quando o cliente encerra indevidamente
-            printf("[%d] %s (%s): %s\n", i, client_name, time_buffer, buffer);
-        }
+        buffer[0] != '\0' ? printf("[%s] %s (%d): %s\n", time_buffer, client_name, i, buffer) : false;
 
         memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(client_socket);
 
-    pthread_exit(NULL); // termina a thread
+    pthread_exit(NULL);
 }
 
 void *handle_msg_out(void *arg){
