@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h> // isdigit()
 #include <signal.h> // signal()
 #include <stdbool.h> // tipo booleano
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
 #include <pthread.h> // manipulação de threads
 #include <unistd.h> // manipulação de processos
+#include <sys/wait.h>
 #include <limits.h> // INT_MAX
 #include <time.h>
 //
@@ -67,7 +67,7 @@ int main(int argc, char **argv){
         shutdown_routine(1);
     }else{
         for(i = 0; i < strlen(argv[1]); i++){
-            if(!isdigit(argv[1][i])){
+            if(argv[1][i] < '0' || argv[1][i] > '9'){
                 fprintf(stderr, "A porta deve ser um inteiro.\n");
 
                 shutdown_routine(1);
@@ -195,7 +195,13 @@ int main(int argc, char **argv){
 }
 
 void shutdown_routine(int signal){
-    child == true ? printf("Encerrando processo filho...\n") : printf("\nEncerrando servidor...\n");
+    if(child){
+        printf("Encerrando processo filho...\n");
+    }else{
+        while(waitpid(-1, NULL, WNOHANG) > 0); // espera por todos os processos filhos
+        
+        printf("\nEncerrando servidor...\n");
+    }
 
     server_socket != -1 ? close(server_socket) : false;
     client_socket != -1 ? close(client_socket) : false;

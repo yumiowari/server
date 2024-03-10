@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h> // isdigit()
 #include <signal.h> // signal()
 #include <stdbool.h> // tipo booleano
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
@@ -61,7 +60,7 @@ int main(int argc, char **argv){
         shutdown_routine(1);
     }else{
         for(i = 0; i < strlen(argv[1]); i++){
-            if(!isdigit(argv[1][i])){
+            if(argv[1][i] < '0' || argv[1][i] > '9'){
                 fprintf(stderr, "A porta deve ser um inteiro.\n");
 
                 shutdown_routine(1);
@@ -72,6 +71,16 @@ int main(int argc, char **argv){
             fprintf(stderr, "O nome de usuario não pode ultrapassar 15 caracteres.\n");
 
             shutdown_routine(1);
+        }
+
+        for(i = 0; i < strlen(argv[2]); i++){
+            if(argv[2][i] < 'A' || argv[2][i] > 'Z'){
+                if(argv[2][i] < 'a' || argv[2][i] > 'z'){
+                    fprintf(stderr, "Somente os caracteres de 'a' - 'Z' são válidos.\n");
+
+                    shutdown_routine(1);
+                }
+            }
         }
 
         port = atoi(argv[1]);
@@ -134,7 +143,7 @@ int main(int argc, char **argv){
     }
     //
 
-    // espera o servidor parar de responder, isto é, o fim da thread
+    // espera o servidor parar de responder
     if(pthread_join(tid_in, NULL) != 0){
         perror("Erro ao aguardar a thread.\n");
 
