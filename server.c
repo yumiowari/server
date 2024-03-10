@@ -1,15 +1,26 @@
 // bibliotecas
+
+// padrão
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h> // signal()
 #include <stdbool.h> // tipo booleano
+#include <limits.h> // INT_MAX
+#include <time.h>
+//
+
+// rede
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
+#include <sys/socket.h>
+//
+
+// processamento paralelo
+#include <signal.h> // manipulação de sinais
 #include <pthread.h> // manipulação de threads
 #include <unistd.h> // manipulação de processos
 #include <sys/wait.h>
-#include <limits.h> // INT_MAX
-#include <time.h>
+//
+
 //
 
 // macros

@@ -1,12 +1,22 @@
 // bibliotecas
+
+// padrão
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h> // signal()
 #include <stdbool.h> // tipo booleano
+//
+
+// rede
 #include <arpa/inet.h> // manipulação e conversão de endereços IP
-#include <unistd.h> // manipulação de processos
+#include <sys/socket.h>
+//
+
+// processamento paralelo
+#include <signal.h> // manipulação de sinais
 #include <pthread.h> // manipulação de threads
+//
+
 //
 
 // macros
