@@ -15,6 +15,7 @@
 // processamento paralelo
 #include <signal.h> // manipulação de sinais
 #include <pthread.h> // manipulação de threads
+#include <unistd.h> // manipulação de processos
 //
 
 //

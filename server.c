@@ -21,6 +21,8 @@
 #include <sys/wait.h>
 //
 
+// estrutura de dados
+#include "bib/pile.h"
 //
 
 // macros
@@ -35,6 +37,9 @@ bool stop = false; // deve parar?
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
 char client_name[16]; // nome de usuário
+Pile *clients = NULL; // pilha de clientes
+int pipe_fd[2]; // file descriptor do pipe
+int id; // receberá o id do cliente
 //
 
 // funções
@@ -53,6 +58,9 @@ void *handle_msg_in(void *arg);
 
 void *handle_msg_out(void *arg);
 // função para lidar com o envio de mensagens aos clientes
+
+void *handle_w8(void *arg);
+// função para esperar o término do cliente
 
 //
 
@@ -125,10 +133,31 @@ int main(int argc, char **argv){
 
     printf("\nServidor on-line e escutando na porta %d!\n", port);
 
-    i = 0; // agora o contador indica o id do cliente, isto é, congruente à ordem de login
+    // inicia o pipe
+    if(pipe(pipe_fd) == -1){
+        perror("Falha na criação do pipe.\n");
+
+        shutdown_routine(1);
+    }
+    //
+
+    // inicia a pilha de clientes
+    clients = create_pile();
+    if(clients == NULL){
+        perror("Falha na criação da pilha.\n");
+
+        shutdown_routine(1);
+    }
+    //
+
+    i = 0;
 
     // loop do servidor
     while(!stop){
+        // verifica se o servidor está cheio
+        if(pile_size(clients) >= 5)continue;
+        //
+
         // laço para aceitação de uma nova conexão
         client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_addr_len);
         if(client_socket == -1){
@@ -152,6 +181,14 @@ int main(int argc, char **argv){
 
         i = (i < (INT_MAX - 1)) ? i + 1 : 1; // impede estouro de inteiro
 
+        if(push(clients, i) == 1){
+            perror("Falha ao empilhar o cliente na pilha.\n");
+
+            close(client_socket);
+
+            continue;
+        }
+
         // fazendo um processo filho para lidar com o cliente
         pid_t pid = fork();
 
@@ -161,9 +198,11 @@ int main(int argc, char **argv){
             continue;
         }else if(pid == 0){
             // processo filho
-            close(server_socket); // não aceita novas conexões no processo filho
 
-            printf("%s se juntou ao chat!\n", client_name);
+            close(server_socket); // não aceita novas conexões no processo filho
+            close(pipe_fd[0]); // fecha o descritor de leitura
+
+            printf("%s se juntou ao chat! [%d/10]\n", client_name, pile_size(clients));
 
             child = true; // indica que é um processo filho
 
@@ -191,11 +230,27 @@ int main(int argc, char **argv){
             }
             //
 
+            printf("Enviou: %d\n", i);
+
+            write(pipe_fd[0], &i, sizeof(i));
+
             shutdown_routine(0);
+
             //
         }else{
             // processo pai
+
             close(client_socket); // somente o processo filho lida com o cliente
+            close(pipe_fd[1]); // fecha o descritor de escrita
+
+            pthread_t tid_w8;
+
+            if(pthread_create(&tid_w8, NULL, handle_w8, NULL) != 0){
+                perror("Erro ao criar thread para esperar o cliente.\n");
+
+                shutdown_routine(1);
+            }
+
             //
         }
         //
@@ -290,3 +345,27 @@ void *handle_msg_out(void *arg){
 
     pthread_exit(NULL);
 }
+
+// sempre no processo pai
+void *handle_w8(void *arg){
+    // remove o id quando o processo termina
+    read(pipe_fd[0], &id, sizeof(id));
+
+    printf("Recebeu: %d\n", id);
+
+    if(jenga(clients, id) == 1){
+        fprintf(stderr, "Elemento não encontrado na pilha.\n");
+
+        shutdown_routine(1);
+    }
+    //
+
+    // reinicia o pipe
+    if(pipe(pipe_fd) == -1){
+        perror("Falha na renicialização do pipe.\n");
+
+        shutdown_routine(1);
+    }
+    //
+}
+//
