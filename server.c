@@ -22,7 +22,7 @@
 //
 
 // estrutura de dados
-#include "bib/pile.h"
+//#include "pile.h"
 //
 
 // macros
@@ -37,7 +37,7 @@ bool stop = false; // deve parar?
 int server_socket; // soquete do servidor
 int client_socket; // soquete do cliente
 char client_name[16]; // nome de usuário
-Pile *clients = NULL; // pilha de clientes
+//Pile *clients = NULL; // pilha de clientes
 int qtd = 0; // quantidade de clientes conectados a todo tempo
 //
 
@@ -134,12 +134,12 @@ int main(int argc, char **argv){
     printf("\nServidor on-line e escutando na porta %d!\n", port);
 
     // inicia a pilha de clientes
-    clients = create_pile();
+    /*clients = create_pile();
     if(clients == NULL){
         perror("Falha na criação da pilha.\n");
 
         shutdown_routine(1);
-    }
+    }*/
     //
 
     i = 0;

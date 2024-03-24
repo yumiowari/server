@@ -1,4 +1,3 @@
 # server
 
-Compilação: `gcc -c bib/pile.c -o bib/pile.o && gcc server.c bib/pile.o -o server && gcc client.c -o client`
-
+Compilação: `gcc -c pile.c -o pile.o && gcc server.c pile.o -o server && gcc client.c -o client`
