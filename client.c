@@ -2,6 +2,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
+
+#define SERVER_IP "127.0.0.1"
 
 bool checkArgs(int argc, char **argv);
 // checa se os parâmetros da função main são válidos
@@ -10,21 +13,44 @@ int main(int argc, char **argv){
     int i; // contador
     unsigned short int port; // porta (0 - 65535)
     char username[16];
+    int client_socket; // soquete de cliente
+    struct sockaddr_in server_addr; // endereço do servidor
 
     if(checkArgs(argc, argv)){
         printf("Verificação de parâmetros de inicialização bem-sucedida.\n");
 
         port = atoi(argv[1]);
-        printf("%d\n", port);
         strcpy(username, argv[2]);
-        printf("%s\n", username);
         username[15] = '\0';
-        printf("%s\n", username);
     }else{
         fprintf(stderr, "Verificação de parâmetros de inicialização retornou falha.\n");
 
         return 1;
     }
+
+    // criando soquete de cliente
+    client_socket = socket(AF_INET, SOCK_STREAM, 0); // TCP e IPv4
+    if(client_socket == -1){
+        fprintf(stderr, "Falha na criação do soquete de cliente.\n");
+
+        return 2;
+    }else printf("Criação do soquete de cliente bem-sucedida.\n");
+    //
+
+    // configurando endereço do servidor
+    printf("Configurando o endereço do servidor.\n");
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+    server_addr.sin_port = htons(port);
+    //
+
+    // conectando ao servidor
+    if(connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1){
+        fprintf(stderr, "Falha ao conectar ao servidor.\n");
+
+        return 3;
+    }else printf("\nConexão estabelecida com o servidor!\n");
+    //
 
     return 0;
 }
