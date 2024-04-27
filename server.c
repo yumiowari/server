@@ -4,9 +4,16 @@
 #include <stdlib.h>
 #include <arpa/inet.h> // rede
 #include <unistd.h> // processamento paralelo
+#include <pthread.h>
 
 bool checkArgs(int argc, char **argv);
 // checa se os parâmetros da função main são válidos
+
+void *handleMsgIn(void *arg);
+// função para lidar com o recebimento de mensagens do cliente
+
+void *handleMsgOut(void *arg);
+// função para lidar com o envio de mensagens ao cliente
 
 int main(int argc, char **argv){
     int i; // contador
@@ -16,6 +23,8 @@ int main(int argc, char **argv){
     struct sockaddr_in server_addr; // endereço do servidor
     struct sockaddr_in client_addr; // endereço de cliente
     socklen_t client_addr_len = sizeof(client_addr); // tamanho do endereço do cliente
+    pid_t pid; // "process id"
+    pthread_t tid_in, tid_out; // "thread id"
 
     if(checkArgs(argc, argv)){
         printf("Verificação de parâmetros de inicialização bem-sucedida.\n");
@@ -69,13 +78,13 @@ int main(int argc, char **argv){
             continue; // pula até a próxima iteração do laço
         }else printf("Conexão estabelecida com o cliente!\n");
 
-        pid_t pid;
-
         pid = fork();
 
         if(pid == -1){
             // fork() falhou
             fprintf(stderr, "Conexão terminada com o cliente:\nFalha na criação do processo filho.\n");
+
+            close(client_socket);
 
             continue;
             //
@@ -83,9 +92,29 @@ int main(int argc, char **argv){
             // processo filho
             close(server_socket); // não aceita novas conexões no processo filho
 
-            while(true){
-                // lógica de comunicação com o cliente
+            // lógica de comunicação com o cliente
+            if(pthread_create(&tid_in, NULL, handleMsgIn, &client_socket) != 0){
+                fprintf(stderr, "Falha ao criar thread para escutar o cliente.\n");
+
+                return 5;
             }
+
+            if(pthread_create(&tid_out, NULL, handleMsgOut, &client_socket) != 0){
+                fprintf(stderr, "Falha ao criar thread para falar ao cliente.\n");
+
+                return 6;
+            }
+                
+            if(pthread_join(tid_in, NULL) != 0){ // espera o fim da conexão com o cliente
+                fprintf(stderr, "Falha ao aguardar a thread handleMsgIn().\n");
+
+                return 7;
+            }
+            //
+
+            printf("Conexão com o cliente terminou.\nFinalizando processo filho...\n");
+
+            return 0;
             //
         }else{
             // processo pai
@@ -128,4 +157,53 @@ bool checkArgs(int argc, char **argv){
     }
 
     return flag;
+}
+
+void *handleMsgIn(void *arg){
+    char buffer[1024];
+    ssize_t recv_bytes;
+    int *client_socket = (int*) arg;
+
+    while(true){
+        recv_bytes = recv(*client_socket, buffer, 1024, 0);
+        
+        if(recv_bytes <= 0){
+            recv_bytes == 0 ? fprintf(stderr, "Conexão com o cliente foi perdida.\n") : fprintf(stderr, "Falha na recepção de dados.\n");
+
+            break;
+        }
+
+        buffer[recv_bytes] = '\0';
+
+        printf("Cliente: %s\n", buffer);
+
+        memset(buffer, 0, 1024); // limpa o buffer
+    }
+
+    close(*client_socket);
+
+    pthread_exit(NULL);
+}
+
+void *handleMsgOut(void *arg){
+    char buffer[1024];
+    int *client_socket = (int*) arg;
+
+    while(true){
+        strcpy(buffer, "Ok!");
+
+        if(send(*client_socket, buffer, 1024, 0) == -1){
+            fprintf(stderr, "Falha ao enviar mensagem ao cliente.\n");
+
+            break;
+        }
+
+        memset(buffer, 0, 1024); // limpa o buffer
+
+        sleep(1); // dá sinal de vida ao cliente a cada segundo
+    }
+
+    close(*client_socket);
+
+    pthread_exit(NULL);
 }
