@@ -52,6 +52,10 @@ int main(int argc, char **argv){
     }else printf("\nConexão estabelecida com o servidor!\n");
     //
 
+    while(true){
+        // lógica de comunicação com o servidor
+    }
+
     return 0;
 }
 

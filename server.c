@@ -2,7 +2,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
+#include <arpa/inet.h> // rede
+#include <unistd.h> // processamento paralelo
 
 bool checkArgs(int argc, char **argv);
 // checa se os parâmetros da função main são válidos
@@ -66,10 +67,30 @@ int main(int argc, char **argv){
             printf("Falha ao aceitar conexão do cliente.\n");
 
             continue; // pula até a próxima iteração do laço
-        }else{
-            printf("Conexão estabelecida com o cliente!\n");
+        }else printf("Conexão estabelecida com o cliente!\n");
 
-            return 0; // para testagem
+        pid_t pid;
+
+        pid = fork();
+
+        if(pid == -1){
+            // fork() falhou
+            fprintf(stderr, "Conexão terminada com o cliente:\nFalha na criação do processo filho.\n");
+
+            continue;
+            //
+        }else if(pid == 0){
+            // processo filho
+            close(server_socket); // não aceita novas conexões no processo filho
+
+            while(true){
+                // lógica de comunicação com o cliente
+            }
+            //
+        }else{
+            // processo pai
+            close(client_socket); // somente o processo filho trata o cliente
+            //
         }
         //
     }
