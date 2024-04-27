@@ -1,26 +1,50 @@
+// BIBLIOTECAS //
+
+// padrão
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+//
+
+// rede
 #include <arpa/inet.h>
-#include <arpa/inet.h> // rede
-#include <unistd.h> // processamento paralelo
+//
+
+// processamento paralelo
+#include <unistd.h>
 #include <pthread.h>
+//
+
+/////////////////
+
+
+
+// MACROS //
 
 #define SERVER_IP "127.0.0.1"
+#define BUFFER_SIZE 1024
+
+////////////
+
+
+
+// FUNÇÕES //
 
 bool checkArgs(int argc, char **argv);
 // checa se os parâmetros da função main são válidos
 
 void *handleMsgIn(void *arg);
-// função para lidar com o recebimento de mensagens do servidor
+// lida com o recebimento de mensagens do servidor
 
 void *handleMsgOut(void *arg);
-// função para lidar com o envio de mensagens ao servidor
+// lida com o envio de mensagens ao servidor
+
+/////////////
 
 int main(int argc, char **argv){
     unsigned short int port; // porta (0 - 65535)
-    char username[16];
+    char username[16]; // nome de usuário
     int client_socket; // soquete de cliente
     struct sockaddr_in server_addr; // endereço do servidor
 
@@ -32,20 +56,20 @@ int main(int argc, char **argv){
     }else{
         fprintf(stderr, "Verificação de parâmetros de inicialização falhou.\n");
 
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
     // criando soquete de cliente
     client_socket = socket(AF_INET, SOCK_STREAM, 0); // TCP e IPv4
     if(client_socket == -1){
-        fprintf(stderr, "Falha na criação do soquete de cliente.\n");
+        fprintf(stderr, "Falha na criação do soquete do cliente.\n");
 
-        return 2;
-    }else printf("Criação do soquete de cliente bem-sucedida.\n");
+        exit(EXIT_FAILURE);
+    }else printf("Criação do soquete do cliente bem-sucedida.\n");
     //
 
     // configurando endereço do servidor
-    printf("Configurando o endereço do servidor.\n");
+    printf("Configurando o endereço do servidor...\n");
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
     server_addr.sin_port = htons(port);
@@ -55,7 +79,7 @@ int main(int argc, char **argv){
     if(connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1){
         fprintf(stderr, "Falha ao conectar ao servidor.\n");
 
-        return 3;
+        exit(EXIT_FAILURE);
     }else printf("\nConexão estabelecida com o servidor!\n");
     //
 
@@ -65,23 +89,25 @@ int main(int argc, char **argv){
     if(pthread_create(&tid_in, NULL, handleMsgIn, &client_socket) != 0){
         fprintf(stderr, "Falha ao criar thread para escutar o servidor.\n");
 
-        return 4;
+        exit(EXIT_FAILURE);
     }
 
     if(pthread_create(&tid_out, NULL, handleMsgOut, &client_socket) != 0){
         fprintf(stderr, "Falha ao criar thread para falar ao servidor.\n");
 
-        return 5;
+        exit(EXIT_FAILURE);
     }
 
     if(pthread_join(tid_in, NULL) != 0){ // espera o fim da conexão com o servidor
         fprintf(stderr, "Falha ao aguardar a thread handleMsgIn().\n");
 
-        return 6;
+        exit(EXIT_FAILURE);
     }
     //
 
-    return 0;
+    printf("Encerrando cliente...\n");
+
+    exit(EXIT_SUCCESS);
 }
 
 bool checkArgs(int argc, char **argv){
@@ -134,12 +160,12 @@ bool checkArgs(int argc, char **argv){
 }
 
 void *handleMsgIn(void *arg){
-    char buffer[1024];
+    char buffer[BUFFER_SIZE];
     ssize_t recv_bytes;
     int *client_socket = (int*) arg;
 
     while(true){
-        recv_bytes = recv(*client_socket, buffer, 1024, 0);
+        recv_bytes = recv(*client_socket, buffer, BUFFER_SIZE, 0);
         
         if(recv_bytes <= 0){
             recv_bytes == 0 ? fprintf(stderr, "\nConexão com o servidor foi perdida.\n") : fprintf(stderr, "Falha na recepção de dados.\n");
@@ -155,7 +181,7 @@ void *handleMsgIn(void *arg){
             break;
         }
 
-        memset(buffer, 0, 1024); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(*client_socket);
@@ -164,20 +190,20 @@ void *handleMsgIn(void *arg){
 }
 
 void *handleMsgOut(void *arg){
-    char buffer[1024];
+    char buffer[BUFFER_SIZE];
     int *client_socket = (int*) arg;
 
     while(true){
         printf("> ");
-        fgets(buffer, 1024, stdin);
+        fgets(buffer, BUFFER_SIZE, stdin);
 
-        if(send(*client_socket, buffer, 1024, 0) == -1){
+        if(send(*client_socket, buffer, BUFFER_SIZE, 0) == -1){
             fprintf(stderr, "Falha ao enviar mensagem ao servidor.\n");
 
             break;
         }
 
-        memset(buffer, 0, 1024); // limpa o buffer
+        memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
     close(*client_socket);
