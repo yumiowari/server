@@ -28,7 +28,18 @@
 
 
 
-// FUNÇÕES //
+// STRUCTS //
+
+struct client_info{
+    char username[16];
+    int client_socket;
+};
+
+/////////////
+
+
+
+// ASSINATURAS //
 
 bool checkArgs(int argc, char **argv);
 // checa se os parâmetros da função main são válidos
@@ -39,17 +50,31 @@ void *handleMsgIn(void *arg);
 void *handleMsgOut(void *arg);
 // lida com o envio de mensagens ao cliente
 
-/////////////
+/////////////////
+
+
 
 int main(int argc, char **argv){
+    // VARIÁVEIS //
+
     unsigned short int port; // porta (0 - 65535)
     int server_socket; // soquete do servidor
-    int client_socket; // soquete de cliente
+    int client_socket; // soquete do cliente
     struct sockaddr_in server_addr; // endereço do servidor
     struct sockaddr_in client_addr; // endereço de cliente
     socklen_t client_addr_len = sizeof(client_addr); // tamanho do endereço de cliente
     pid_t pid; // "process id"
     pthread_t tid_in, tid_out; // "thread id"
+    ssize_t recv_bytes; // qtd de bytes recebidos
+    char buffer[BUFFER_SIZE]; // buffer para I/O de mensagem
+    char username[16]; // nome de usuário
+    struct client_info client_id; // identidade do cliente
+
+    ///////////////
+    
+
+
+    // ALGORITMO //
 
     if(checkArgs(argc, argv)){
         printf("Verificação de parâmetros de inicialização bem-sucedida.\n");
@@ -101,7 +126,24 @@ int main(int argc, char **argv){
             printf("Falha ao aceitar conexão do cliente.\n");
 
             continue; // pula até a próxima iteração do laço
-        }else printf("Conexão estabelecida com o cliente!\n");
+        }
+        //
+
+        // configura a identidade do cliente
+        recv_bytes = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        if(recv_bytes <= 0){
+            fprintf(stderr, "Falha ao receber o nome do cliente.\n");
+
+            continue;
+        }
+
+        strcpy(username, buffer);
+
+        client_id.client_socket = client_socket;
+        strcpy(client_id.username, username);
+
+        printf("%s se juntou ao chat!\n", username);
+        //
 
         pid = fork();
 
@@ -118,13 +160,13 @@ int main(int argc, char **argv){
             close(server_socket); // não aceita novas conexões no processo filho
 
             // lógica de comunicação com o cliente
-            if(pthread_create(&tid_in, NULL, handleMsgIn, &client_socket) != 0){
+            if(pthread_create(&tid_in, NULL, handleMsgIn, &client_id) != 0){
                 fprintf(stderr, "Falha ao criar thread para escutar o cliente.\n");
 
                 exit(EXIT_FAILURE);
             }
 
-            if(pthread_create(&tid_out, NULL, handleMsgOut, &client_socket) != 0){
+            if(pthread_create(&tid_out, NULL, handleMsgOut, &client_id) != 0){
                 fprintf(stderr, "Falha ao criar thread para falar ao cliente.\n");
 
                 exit(EXIT_FAILURE);
@@ -137,7 +179,7 @@ int main(int argc, char **argv){
             }
             //
 
-            printf("Conexão com o cliente terminou.\nEncerrando processo filho...\n");
+            printf("%s saiu do chat.\nEncerrando processo filho...\n", username);
 
             exit(EXIT_SUCCESS);
             //
@@ -146,18 +188,31 @@ int main(int argc, char **argv){
             close(client_socket); // somente o processo filho trata o cliente
             //
         }
-        //
     }
     //
 
     printf("Encerrando servidor...\n");
 
     exit(EXIT_SUCCESS);
+
+    ///////////////
 }
 
+
+
+// FUNÇÕES //
+
 bool checkArgs(int argc, char **argv){
-    int i;
-    bool flag = true;
+    // VARIÁVEIS //
+
+    int i; // contador
+    bool flag = true; // bandeira
+
+    ///////////////
+
+
+
+    // ALGORITMO //
 
     if(argc < 2){
         fprintf(stderr, "Argumentos insuficientes.\nUso: ./server <porta>\n");
@@ -184,42 +239,70 @@ bool checkArgs(int argc, char **argv){
     }
 
     return flag;
+
+    ///////////////
 }
 
 void *handleMsgIn(void *arg){
-    char buffer[BUFFER_SIZE];
-    ssize_t recv_bytes;
-    int *client_socket = (int*) arg;
+    // VARIÁVEIS //
+
+    char buffer[BUFFER_SIZE]; // buffer para I/O de mensagem
+    ssize_t recv_bytes; // qtd de bytes recebidos
+    struct client_info *client_id = (struct client_info*) arg; // identidade do cliente
+    int client_socket = client_id->client_socket; // soquete do cliente
+    char username[16]; // nome de usuário
+
+    ///////////////
+
+
+
+    // ALGORITMO //
+
+    strcpy(username, client_id->username);
 
     while(true){
-        recv_bytes = recv(*client_socket, buffer, BUFFER_SIZE, 0);
+        recv_bytes = recv(client_socket, buffer, BUFFER_SIZE, 0);
         
         if(recv_bytes <= 0){
-            recv_bytes == 0 ? fprintf(stderr, "Conexão com o cliente foi perdida.\n") : fprintf(stderr, "Falha na recepção de dados.\n");
+            if(recv_bytes == 0){
+                printf("Conexão com %s foi perdida.\n", username);
+            }else fprintf(stderr, "Falha na recepção de dados.\n");
 
             break;
         }
 
         buffer[recv_bytes] = '\0';
 
-        printf("Cliente: %s", buffer);
+        printf("%s: %s", username, buffer);
 
         memset(buffer, 0, BUFFER_SIZE); // limpa o buffer
     }
 
-    close(*client_socket);
+    close(client_socket);
 
     pthread_exit(NULL);
+
+    ///////////////
 }
 
 void *handleMsgOut(void *arg){
-    char buffer[BUFFER_SIZE];
-    int *client_socket = (int*) arg;
+    // VARIÁVEIS //
+
+    char buffer[BUFFER_SIZE]; // buffer para I/O de mensagem
+    ssize_t recv_bytes; // qtd de bytes recebidos
+    struct client_info *client_id = (struct client_info*) arg; // identidade do cliente
+    int client_socket = client_id->client_socket; // soquete do cliente
+
+    ///////////////
+
+
+
+    // ALGORITMO //
 
     while(true){
         strcpy(buffer, "Ok!");
 
-        if(send(*client_socket, buffer, BUFFER_SIZE, 0) == -1){
+        if(send(client_socket, buffer, BUFFER_SIZE, 0) == -1){
             fprintf(stderr, "Falha ao enviar mensagem ao cliente.\n");
 
             break;
@@ -230,7 +313,11 @@ void *handleMsgOut(void *arg){
         sleep(1); // dá sinal de vida ao cliente a cada segundo
     }
 
-    close(*client_socket);
+    close(client_socket);
 
     pthread_exit(NULL);
+
+    ///////////////
 }
+
+/////////////
